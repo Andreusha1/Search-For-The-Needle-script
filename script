@@ -1,0 +1,317 @@
+local source = game:HttpGet("https://raw.githubusercontent.com/Andreusha1/OnrushaHub/refs/heads/main/script")
+print("Source:", #source)
+
+local loader, err = loadstring(source)
+
+print("Loader:", loader)
+print("Error:", err)
+
+if not loader then
+	return
+end
+
+local oh = loader()
+print("Library:", oh)
+local Window = oh.create({
+	Name = "onrushanewgui",
+	Open = false,
+	Drag = true,
+	OpenButtonDrag = true
+})
+Window:RemoveTab("Player")
+local Main = Window:GetTab("Main")
+local Upgrades = Window:CreateTab("Upgrades")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local player = Players.LocalPlayer
+local AutoSell = false
+local AutoGrab = false
+local AutoBuySpeed = false
+local AutoBuyGrab = false
+local AutoGemCollect = false
+local AutoBuyBag = false
+local AutoGrabMutation = false
+local AutoBuyPithfork = false
+local AutoBuyTNT = false
+local AutoBuyVacuum = false
+local MutationThread = nil
+local selling = false
+
+
+Main:AddSection("Update 1.1.1")
+
+
+Main:AddToggle("Auto Grab", false, function(value)
+	AutoGrab = value
+	if value then
+		task.spawn(function()
+			while AutoGrab do
+				local capacity = player.PlayerGui.HUD.BottomLeft.Capacity
+				local current = capacity.CurrentAmount
+				local total = capacity.BackgroundHaybale.TotalCapacity
+				local currentAmount = tonumber(current.Text:match("%d+")) or 0
+				local totalCapacity = tonumber(total.Text:match("%d+")) or 0
+				if currentAmount < totalCapacity then
+					local character = player.Character
+					local root = character and character:FindFirstChild("HumanoidRootPart")
+					if root then
+						local grabAmount = tonumber(player:GetAttribute("HayUpgradeGrab")) or 1
+						local heldTool = character:FindFirstChild("HeldTool")
+						if heldTool and heldTool:GetAttribute("Tool") == "Pitchfork" then
+							grabAmount = 30
+						end
+						local freeSpace = totalCapacity - currentAmount
+						local amount = math.min(grabAmount, freeSpace)
+						local hays = {}
+						for _, hay in ipairs(workspace.HaystackClient:GetChildren()) do
+							local hayId = hay:GetAttribute("HayId")
+							local part = hay:IsA("BasePart") and hay or hay:FindFirstChildWhichIsA("BasePart", true)
+							if hayId ~= nil and part then
+								table.insert(hays, {
+									id = hayId,
+									distance = (root.Position - part.Position).Magnitude
+								})
+							end
+						end
+						table.sort(hays, function(a, b)
+							return a.distance < b.distance
+						end)
+						amount = math.min(amount, #hays)
+						if amount > 0 then
+							local ids = {}
+							for i = 1, amount do
+								ids[i] = hays[i].id
+							end
+							ReplicatedStorage.NeedleHaystack.PickHay:FireServer(ids[1], ids)
+						end
+					end
+				end
+				task.wait(0.1)
+			end
+		end)
+	end
+end)
+
+Main:AddToggle("Auto Grab Mutation", false, function(value)
+	AutoGrabMutation = value
+	local character = player.Character
+	local root = character and character:FindFirstChild("HumanoidRootPart")
+	if not value then
+		if root then
+			root.Anchored = false
+		end
+		return
+	end
+	if MutationThread then
+		return
+	end
+	MutationThread = task.spawn(function()
+		while AutoGrabMutation do
+			character = player.Character
+			root = character and character:FindFirstChild("HumanoidRootPart")
+			if not root then
+				task.wait(0.1)
+				continue
+			end
+			local capacity = player.PlayerGui.HUD.BottomLeft.Capacity
+			local current = capacity.CurrentAmount
+			local total = capacity.BackgroundHaybale.TotalCapacity
+			local currentAmount = tonumber(current.Text:match("%d+")) or 0
+			local totalCapacity = tonumber(total.Text:match("%d+")) or 0
+			if currentAmount >= totalCapacity then
+				root.Anchored = false
+				task.wait(0.1)
+				continue
+			end
+			local grabAmount = tonumber(player:GetAttribute("HayUpgradeGrab")) or 1
+			local freeSpace = totalCapacity - currentAmount
+			local amount = math.min(grabAmount, freeSpace)
+			local hays = {}
+			for _, hay in ipairs(workspace.HaystackClient:GetChildren()) do
+				local hayId = hay:GetAttribute("HayId")
+				local mutation = hay:GetAttribute("HayMutation")
+				if hayId ~= nil and mutation ~= nil and mutation ~= "Normal" then
+					local part = hay:IsA("BasePart") and hay or hay:FindFirstChildWhichIsA("BasePart", true)
+					if part then
+						table.insert(hays, {
+							id = hayId,
+							part = part
+						})
+						if #hays >= amount then
+							break
+						end
+					end
+				end
+			end
+			if #hays == 0 then
+				root.Anchored = false
+				task.wait(0.1)
+				continue
+			end
+			root.Anchored = true
+			local ids = {}
+			for i = 1, #hays do
+				ids[i] = hays[i].id
+			end
+			root.CFrame = hays[1].part.CFrame + Vector3.new(0, 3, 0)
+			ReplicatedStorage.NeedleHaystack.PickHay:FireServer(ids[1], ids)
+			task.wait(0.05)
+		end
+		character = player.Character
+		root = character and character:FindFirstChild("HumanoidRootPart")
+		if root then
+			root.Anchored = false
+		end
+		MutationThread = nil
+	end)
+end)
+
+Main:AddToggle("Auto Sell", false, function(value)
+	AutoSell = value
+	if value then
+		task.spawn(function()
+			while AutoSell do
+				local capacity = player.PlayerGui.HUD.BottomLeft.Capacity
+				local current = capacity.CurrentAmount
+				local total = capacity.BackgroundHaybale.TotalCapacity
+				if current.Text == total.Text and not selling then
+					selling = true
+					local character = player.Character
+					if character then
+						local originalCFrame = character:GetPivot()
+						character.Archivable = true
+						local clone = character:Clone()
+						clone.Parent = workspace
+						clone:PivotTo(originalCFrame)
+						player.Character = clone
+						workspace.CurrentCamera.CameraSubject = clone:WaitForChild("Humanoid")
+						character:PivotTo(CFrame.new(-163.936874, 2.9513638, 56.9055519))
+						task.wait(0.15)
+						local before = current.Text
+						ReplicatedStorage.NeedleHaystack.SellHay:FireServer()
+						local timeout = 0
+						repeat
+							task.wait(0.05)
+							timeout += 0.05
+						until current.Text ~= before or timeout >= 1
+						character:PivotTo(originalCFrame)
+						player.Character = character
+						workspace.CurrentCamera.CameraSubject = character:WaitForChild("Humanoid")
+						clone:Destroy()
+					end
+					selling = false
+				end
+				task.wait(0.1)
+			end
+		end)
+	end
+end)
+
+Main:AddToggle("Auto Gem Collect", false, function(value)
+	AutoGemCollect = value
+	if value then
+		task.spawn(function()
+			while AutoGemCollect do
+				local gems = workspace.GemsClient
+				local Event = ReplicatedStorage.NeedleHaystack.CollectGem
+				for _, v in pairs(gems:GetChildren()) do
+					local diamond = v:FindFirstChild("Diamond")
+					if diamond then
+						local id = diamond:GetAttribute("GemId")
+						if id then
+							Event:FireServer(id)
+						end
+					end
+				end
+				task.wait(0.2)
+			end
+		end)
+	end
+end)
+Upgrades:AddSection("Items")
+Upgrades:AddToggle("Auto Buy Bag", false, function(value)
+	AutoBuyBag = value
+	if value then
+		task.spawn(function()
+			while AutoBuyBag do
+				ReplicatedStorage.Shared.Services.SoundService.SoundServiceClient.Error.Volume = 0
+				local Event = ReplicatedStorage.NeedleHaystack.BuyUpgrade
+				Event:FireServer("Capacity")
+				task.wait(0.2)
+				ReplicatedStorage.Shared.Services.SoundService.SoundServiceClient.Error.Volume = 0.5
+			end
+		end)
+	end
+end)
+Upgrades:AddToggle("Auto Buy Pitchfork", false, function(value)
+	AutoBuyPithfork = value
+	if value then
+		local sevent = game:GetService("ReplicatedStorage").NeedleHaystack.BuyShopItem
+		task.spawn(function()
+			while AutoBuyPithfork do
+				ReplicatedStorage.Shared.Services.SoundService.SoundServiceClient.Error.Volume = 0
+				sevent:FireServer("Pitchfork")
+				task.wait(0.2)
+				ReplicatedStorage.Shared.Services.SoundService.SoundServiceClient.Error.Volume = 0.5
+			end
+		end)
+	end
+end)
+Upgrades:AddToggle("Auto Buy TNT", false, function(value)
+	AutoBuyTNT = value
+	if value then
+		local sevent = game:GetService("ReplicatedStorage").NeedleHaystack.BuyShopItem
+		task.spawn(function()
+			while AutoBuyTNT do
+				ReplicatedStorage.Shared.Services.SoundService.SoundServiceClient.Error.Volume = 0
+				sevent:FireServer("Tnt")
+				task.wait(0.2)
+				ReplicatedStorage.Shared.Services.SoundService.SoundServiceClient.Error.Volume = 0.5
+			end
+		end)
+	end
+end)
+Upgrades:AddToggle("Auto Buy Vacuum", false, function(value)
+	AutoBuyVacuum = value
+	if value then
+		local sevent = game:GetService("ReplicatedStorage").NeedleHaystack.BuyShopItem
+		task.spawn(function()
+			while AutoBuyVacuum do
+				ReplicatedStorage.Shared.Services.SoundService.SoundServiceClient.Error.Volume = 0
+				sevent:FireServer("Vacuum")
+				task.wait(0.2)
+				ReplicatedStorage.Shared.Services.SoundService.SoundServiceClient.Error.Volume = 0.5
+			end
+		end)
+	end
+end)
+Upgrades:AddSection("Hand")
+Upgrades:AddToggle("Auto Buy Speed", false, function(value)
+	AutoBuySpeed = value
+	if value then
+		task.spawn(function()
+			while AutoBuySpeed do
+				ReplicatedStorage.Shared.Services.SoundService.SoundServiceClient.Error.Volume = 0
+				local Event = ReplicatedStorage.NeedleHaystack.BuyUpgrade
+				Event:FireServer("Speed")
+				task.wait(0.2)
+				ReplicatedStorage.Shared.Services.SoundService.SoundServiceClient.Error.Volume = 0.5
+			end
+		end)
+	end
+end)
+
+Upgrades:AddToggle("Auto Buy Grab", false, function(value)
+	AutoBuyGrab = value
+	if value then
+		task.spawn(function()
+			while AutoBuyGrab do
+				ReplicatedStorage.Shared.Services.SoundService.SoundServiceClient.Error.Volume = 0
+				local Event = ReplicatedStorage.NeedleHaystack.BuyUpgrade
+				Event:FireServer("Grab")
+				task.wait(0.2)
+				ReplicatedStorage.Shared.Services.SoundService.SoundServiceClient.Error.Volume = 0.5
+			end
+		end)
+	end
+end)
